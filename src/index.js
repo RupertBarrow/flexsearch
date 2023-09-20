@@ -18,7 +18,7 @@ import {
 
 import { IndexInterface } from "./type.js";
 import { encode as default_encoder } from "./lang/latin/default.js";
-import { create_object, create_object_array, concat, sort_by_length_down, is_array, is_string, is_object, parse_option } from "./common.js";
+import { create_object, create_object_array, concat, sort_by_length_down, is_array, is_string, is_number, is_object, parse_option } from "./common.js";
 import { pipeline, init_stemmer_or_matcher, init_filter } from "./lang.js";
 import { global_lang, global_charset } from "./global.js";
 import apply_async from "./async.js";
@@ -368,6 +368,66 @@ Index.prototype.push_index = function(dupes, value, score, id, append, keyword){
     }
 }
 
+
+const LIMIT = 100
+const OFFSET = 0
+
+const addQuery = function(query, limit, options) {
+        // Assert correct types of parameters
+        if(is_string(query) && is_number(limit) && limit>0 && is_object(options) && !is_array(options)) {
+            return {
+                query:    query || options["query"],
+                limit:    limit,
+                offset :  options["offset"] || OFFSET,
+                context : options["context"],
+                suggest : SUPPORT_SUGGESTION && options["suggest"]
+            }
+        } else {
+            throw new Error('Incorrect parameter types')
+        }
+}
+
+const manageDupes = function(that, query, suggest) {
+    query = (that.encode(query));
+    let length = query.length;
+
+    // TODO: solve this in one single loop below
+
+    if(length > 1){
+        const dupes = create_object();
+        const query_new = [];
+
+        for(let i = 0, count = 0, term; i < length; i++){
+            term = query[i];
+
+            if(term && (term.length >= that.minlength) && !dupes[term]){
+                // this fast path just could applied when not in memory-optimized mode
+                if (!that.optimize && !suggest && !that.map[term]) {
+                    // fast path "not found"
+                    return undefined;
+                } else {
+                    query_new[count++] = term;
+                    dupes[term] = 1;
+                }
+            }
+        }
+
+        return query_new;
+    } else {
+       return query
+    }
+}
+
+const getOptions = function(options) {
+    return { 
+        context: options["context"],
+        suggest: SUPPORT_SUGGESTION && options["suggest"],
+        offset:  options["context"] || 0,
+
+        term:    options["query"]
+    }
+}
+
 /**
  * @param {string|Object} query
  * @param {number|Object=} limit
@@ -376,6 +436,121 @@ Index.prototype.push_index = function(dupes, value, score, id, append, keyword){
  */
 
 Index.prototype.search = function(query, limit, options){
+    // Multi-field query
+    let mfquery = [];
+
+    // Generalize this method for multi-field queries :
+    // 3 parameters (query, limit, options)
+    if (query && limit && is_number(limit) && options && is_object(options)) {
+        mfquery.push(addQuery(query, limit, options));
+    }
+
+    // 2 parameters (query, options)
+    else if (query && limit && is_object(limit) && !options) {
+        options = limit;
+        limit = options["limit"] || LIMIT;
+        mfquery.push(addQuery(query, limit, options));
+    }
+
+    // 1 parameter (query mono-field)
+    else if (query && is_object(query) && !is_array(query) && !limit && !options) {
+        options = query;
+        limit = options["limit"] || LIMIT;
+        mfquery.push(query);
+    }
+
+    // 1 parameter (query multi-field)
+    else if (query && is_array(query) && !limit && !options) {
+        options = {};
+        limit = LIMIT;
+        mfquery = query;
+    }
+
+
+    let result = [];
+    let length = mfquery.length;
+    let { context, suggest, offset, t } = getOptions(options);  // default values. t is unused
+
+    if(length > 1) {
+        mfquery = manageDupes(this, mfquery, suggest);
+        if (!mfquery) {
+            return result;
+        }
+        length = mfquery.length
+    }
+
+    if (length == 0) {
+        return result;   // nothing found
+    }
+
+    let depth = this.depth && (length > 1) && (context !== false);
+    let index = 0, keyword;
+
+    if (depth){
+        keyword = query[0];
+        index = 1;
+    } else if (length > 1){
+        mfquery.sort( (a, b) => sort_by_length_down(a.query, b.query) );
+    }
+
+    for(; index < length; index++){
+        let arr
+        let { context, suggest, offset, term } = getOptions(mfquery[index])
+        limit = mfquery[index]["limit"] || limit || LIMIT
+
+        // console.log(keyword);
+        // console.log(term);
+        // console.log("");
+
+        if (depth) {
+            arr = this.add_result(result, suggest, limit, offset, length === 2, term, keyword);
+            // console.log(arr);
+            // console.log(result);
+
+            // when suggestion enabled just forward keyword if term was found
+            // as long as the result is empty forward the pointer also
+
+            if(!suggest || (arr !== false) || !result.length) {
+                keyword = term;
+            }
+        } else {
+            arr = this.add_result(result, suggest, limit, offset, length === 1, term);
+        }
+
+        if (arr) {
+            return /** @type {Array<number|string>} */ (arr);
+        }
+
+        // apply suggestions on last loop or fallback
+
+        if(suggest && (index === length - 1)){
+            let length = result.length;
+            if(!length){
+                if(depth){
+                    // fallback to non-contextual search when no result was found
+                    depth = 0;
+                    index = -1;
+                    continue;
+                }
+                return result;
+            } else if(length === 1){
+                // fast path optimization
+                return single_result(result[0], limit, offset);
+            }
+        }
+    }
+
+    return intersect(result, limit, offset, suggest);
+};
+
+/**
+ * @param {string|Object} query
+ * @param {number|Object=} limit
+ * @param {Object=} options
+ * @returns {Array<number|string>}
+ */
+
+Index.prototype.search1 = function(query, limit, options){
 
     if(!options){
 

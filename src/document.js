@@ -559,6 +559,16 @@ Document.prototype.search = function(query, limit, options, _resolve){
 
             opt = key;
             key = key["field"];
+
+            // RBW FIXME : ajoutés
+            /*
+            pluck = opt["pluck"];
+            tag = SUPPORT_TAGS && opt["tag"];
+            enrich = SUPPORT_STORE && this.store && opt["enrich"];
+            bool = opt["bool"] === "and";
+            limit = opt["limit"] || 100;
+            offset = opt["offset"] || 0;
+            */
         }
 
         if(promises){

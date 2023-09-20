@@ -2,17 +2,12 @@
   "public": false,
   "preferGlobal": false,
   "scripts": {
-
-
     "test:production": "mocha --timeout=3000 test --exit",
     "test:light": "mocha --timeout=3000 test/ --exit",
     "test:develop": "mocha --timeout=3000 --exit",
     "test:browser": "nyc instrument ./dist/flexsearch.pre.js ./dist/ && nyc --reporter=html --reporter=text --cache true mocha-headless-chrome -f index.html?coverage -c .nyc_output/coverage.json && mocha-headless-chrome -f polyfill.html?coverage -c .nyc_output/coverage2.json",
     "test:polyfill": "nyc --reporter=html --reporter=text --cache true mocha-headless-chrome -f polyfill.html?coverage -c .nyc_output/coverage2.json",
     "test:es5": "mocha-phantomjs index.html",
-
-
-
     "test": "npm run test:es5 && npm run test:browser && node ./merge-coverage.js",
     "coverage": "nyc report --reporter=text-lcov | coveralls",
     "server": "node server.js"
@@ -34,7 +29,10 @@
     "LICENSE"
   ],
   "readme": "README.md",
-  "dependencies": {},
+  "dependencies": {
+    "phantomjs": "1.9.7-15",
+    "phantomjs-prebuilt": "^2.1.16"
+  },
   "devDependencies": {
     "chai": "^4.2.0",
     "codacy-coverage": "^3.4.0",

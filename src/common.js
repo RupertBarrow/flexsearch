@@ -67,6 +67,11 @@ export function is_string(val){
     return typeof val === "string";
 }
 
+export function is_number(val){
+
+    return typeof val === "number";
+}
+
 export function is_object(val){
 
     return typeof val === "object";
